@@ -63,10 +63,14 @@ export default function App() {
   }, [roomId]);
 
   const handleDraw = useCallback((line: any) => {
-    if (roomId) {
-      const roomRef = ref(db, `rooms/${roomId}/lines`);
-      const newLineRef = push(roomRef);
-      set(newLineRef, line);
+    if (roomId && line && line.points && line.points.length > 0) {
+      try {
+        const roomRef = ref(db, `rooms/${roomId}/lines`);
+        const newLineRef = push(roomRef);
+        set(newLineRef, line);
+      } catch (err) {
+        console.error("Firebase Sync Error:", err);
+      }
     }
   }, [roomId]);
 

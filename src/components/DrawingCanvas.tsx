@@ -42,11 +42,9 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   redoTrigger
 }) => {
   const [localLines, setLocalLines] = useState<LineData[]>([]);
+  const [currentLine, setCurrentLine] = useState<LineData | null>(null);
   const [history, setHistory] = useState<LineData[][]>([]);
   const [redoStack, setRedoStack] = useState<LineData[][]>([]);
-  
-  // Merge local and remote lines
-  const lines = [...remoteLines, ...localLines];
   
   const isDrawing = useRef(false);
   const stageRef = useRef<any>(null);
@@ -77,7 +75,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, []);
 
   useEffect(() => {
-    // Firebase handles the state sync now via remoteLines prop
+    // Sync local history with remote lines if needed
   }, [remoteLines]);
 
   // Handle Undo/Redo triggers from parent
@@ -96,31 +94,20 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   const handleUndo = () => {
     if (history.length === 0) return;
-    
     const lastState = history[history.length - 1];
-    
-    setRedoStack(prev => [...prev, [...lines]]);
+    setRedoStack(prev => [...prev, [...localLines]]);
     setHistory(prev => prev.slice(0, -1));
     setLocalLines(lastState || []);
-    
     onUndoAvailable(history.length > 1);
     onRedoAvailable(true);
   };
 
   const handleRedo = () => {
     if (redoStack.length === 0) return;
-    
     const nextState = redoStack[redoStack.length - 1];
-    const lineToReAdd = nextState[nextState.length - 1];
-    
-    if (lineToReAdd && roomId) {
-      onDraw(lineToReAdd);
-    }
-
-    setHistory(prev => [...prev, [...lines]]);
+    setHistory(prev => [...prev, [...localLines]]);
     setRedoStack(prev => prev.slice(0, -1));
     setLocalLines(nextState);
-    
     onUndoAvailable(true);
     onRedoAvailable(redoStack.length > 1);
   };
@@ -133,7 +120,6 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   };
 
   const handleMouseDown = (e: any) => {
-    // If clicking on background, start drawing or lassoing
     if (e.target !== e.target.getStage() && activeTool !== 'lasso') return;
 
     const stage = e.target.getStage();
@@ -159,16 +145,9 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       shadowColor: activeTool === 'neon' ? brushColor : undefined,
     };
     
-    setLocalLines(prev => {
-      saveToHistory(prev);
-      return [...prev, newLine];
-    });
-    
+    setCurrentLine(newLine);
     setRedoStack([]);
     onRedoAvailable(false);
-
-    // Sync to Firebase
-    onDraw(newLine);
   };
 
   const handleMouseMove = (e: any) => {
@@ -180,27 +159,21 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return;
     }
 
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || !currentLine) return;
 
-    setLocalLines(prev => {
-      const lastLine = { ...prev[prev.length - 1] };
-      lastLine.points = lastLine.points.concat([pos.x, pos.y]);
-      
-      const newLines = [...prev];
-      newLines[newLines.length - 1] = lastLine;
-
-      // Sync to Firebase
-      onDraw(lastLine);
-
-      return newLines;
+    setCurrentLine(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        points: prev.points.concat([pos.x, pos.y])
+      };
     });
   };
 
   const handleMouseUp = () => {
     if (isLassoing.current) {
       isLassoing.current = false;
-      // Simple lasso logic: select lines whose first point is inside the lasso polygon
-      const selected = lines.filter(line => {
+      const selected = [...remoteLines, ...localLines].filter(line => {
         const x = line.points[0];
         const y = line.points[1];
         const minX = Math.min(...lassoPoints.filter((_, i) => i % 2 === 0));
@@ -215,17 +188,19 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return;
     }
 
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || !currentLine) return;
     isDrawing.current = false;
     
-    // Final sync
+    const finishedLine = currentLine;
+    setCurrentLine(null);
+    
     setLocalLines(prev => {
-      const lastLine = prev[prev.length - 1];
-      if (lastLine) {
-        onDraw(lastLine);
-      }
-      return prev;
+      saveToHistory(prev);
+      return [...prev, finishedLine];
     });
+
+    // Sync to Firebase ONLY on mouse up to prevent crashes
+    onDraw(finishedLine);
   };
 
   const handleWheel = (e: any) => {
@@ -318,7 +293,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         ref={stageRef}
       >
         <Layer>
-          {lines.map((line) => (
+          {[...remoteLines, ...localLines].map((line) => (
             <Line
               key={line.id}
               points={line.points}
@@ -351,6 +326,26 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               strokeScaleEnabled={false}
             />
           ))}
+
+          {/* Active Drawing Line */}
+          {currentLine && (
+            <Line
+              points={currentLine.points}
+              stroke={currentLine.color}
+              strokeWidth={currentLine.size}
+              opacity={currentLine.opacity || 1}
+              dash={currentLine.dash}
+              shadowBlur={currentLine.shadowBlur}
+              shadowColor={currentLine.shadowColor}
+              tension={0.5}
+              lineCap="round"
+              lineJoin="round"
+              globalCompositeOperation={
+                currentLine.tool === 'eraser' ? 'destination-out' : 'source-over'
+              }
+              strokeScaleEnabled={false}
+            />
+          )}
           
           {/* Lasso Preview */}
           {lassoPoints.length > 0 && (
