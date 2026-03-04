@@ -17,6 +17,18 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [socketError, setSocketError] = useState<string | null>(null);
   const [pingStatus, setPingStatus] = useState<string>('Not tested');
+  const [serverLogs, setServerLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch('/api/logs');
+      const data = await res.json();
+      setServerLogs(data);
+    } catch (err) {
+      setServerLogs(['Failed to fetch logs']);
+    }
+  };
   const [copied, setCopied] = useState(false);
 
   const testPing = async () => {
@@ -27,12 +39,13 @@ export default function App() {
       try {
         const data = JSON.parse(text);
         if (data.status === 'online') {
-          setPingStatus(`Success: Server Online (${data.serverTime.split('T')[1].split('.')[0]})`);
+          setPingStatus(`Success: Server Online`);
+          fetchLogs(); // Automatically fetch logs on success
         } else {
-          setPingStatus(`Error: Unexpected response format`);
+          setPingStatus(`Error: Unexpected format`);
         }
       } catch (e) {
-        setPingStatus(`Error: Not JSON. Body: ${text.substring(0, 30)}...`);
+        setPingStatus(`Error: 404/Not JSON. Body: ${text.substring(0, 20)}...`);
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);
@@ -286,6 +299,21 @@ export default function App() {
                 >
                   Test Server Ping
                 </button>
+                
+                {/* Diagnostic Logs */}
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <button 
+                    onClick={() => { setShowLogs(!showLogs); fetchLogs(); }}
+                    className="text-[10px] text-white/40 hover:text-white/60 uppercase tracking-widest"
+                  >
+                    {showLogs ? 'Hide Server Logs' : 'Show Server Logs'}
+                  </button>
+                  {showLogs && (
+                    <div className="mt-2 max-h-32 overflow-y-auto font-mono text-[9px] text-emerald-400/80 bg-black/40 p-2 rounded">
+                      {serverLogs.map((log, i) => <div key={i}>{log}</div>)}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>
