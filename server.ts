@@ -12,23 +12,26 @@ async function startServer() {
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
+    path: "/socket.io/",
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
+      credentials: true
     },
+    allowEIO3: true,
+    transports: ['polling', 'websocket']
   });
 
   const PORT = 3000;
 
   // API routes go here
-  app.get(["/api/health", "/api/health/"], (req, res) => {
-    console.log(`[Server] Health check from ${req.ip}`);
-    res.setHeader('Content-Type', 'application/json');
-    res.status(200).send(JSON.stringify({ 
-      status: "ok", 
-      env: process.env.NODE_ENV || 'development',
-      time: new Date().toISOString() 
-    }));
+  app.get("/api/health", (req, res) => {
+    console.log(`[Server] Health check received`);
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  app.get("/api/ping", (req, res) => {
+    res.send("pong");
   });
 
   // Store canvas state per room

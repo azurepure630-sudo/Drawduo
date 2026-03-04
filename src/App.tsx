@@ -22,13 +22,20 @@ export default function App() {
   const testPing = async () => {
     setPingStatus('Testing...');
     try {
-      const res = await fetch('/api/health', { cache: 'no-store' });
+      // Use absolute URL to bypass any relative path issues
+      const url = `${window.location.origin}/api/health?t=${Date.now()}`;
+      const res = await fetch(url, { 
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store' 
+      });
+      
       const text = await res.text();
       try {
         const data = JSON.parse(text);
         setPingStatus(`Success: ${data.status}`);
       } catch (e) {
-        setPingStatus(`Error: Not JSON. Starts with: "${text.substring(0, 20)}..."`);
+        setPingStatus(`Error: Not JSON. Status: ${res.status}. Body: ${text.substring(0, 30)}...`);
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);
@@ -52,12 +59,14 @@ export default function App() {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io({
+    const newSocket = io(window.location.origin, {
+      path: '/socket.io/',
       transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       timeout: 20000,
+      forceNew: true
     });
 
     newSocket.on('connect', () => {
