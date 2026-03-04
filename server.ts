@@ -25,41 +25,46 @@ async function startServer() {
   const rooms: Record<string, any[]> = {};
 
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    console.log(`[Socket] User connected: ${socket.id}`);
 
     socket.on("join-room", (roomId: string) => {
+      if (!roomId) return;
       socket.join(roomId);
-      console.log(`User ${socket.id} joined room ${roomId}`);
+      console.log(`[Socket] User ${socket.id} joined room: ${roomId}`);
       
       // Send current room state to the new user
-      if (rooms[roomId]) {
-        socket.emit("canvas-state", rooms[roomId]);
-      } else {
-        rooms[roomId] = [];
-      }
+      const state = rooms[roomId] || [];
+      socket.emit("canvas-state", state);
     });
 
     socket.on("draw", (data: { roomId: string; line: any }) => {
       const { roomId, line } = data;
+      if (!roomId || !line) return;
+      
       if (!rooms[roomId]) rooms[roomId] = [];
       
       // If the line has an ID, check if we're updating an existing one
       const existingIndex = rooms[roomId].findIndex(l => l.id === line.id);
       if (existingIndex !== -1) {
         rooms[roomId][existingIndex] = line;
-        socket.to(roomId).emit("draw-update", line);
       } else {
         rooms[roomId].push(line);
-        socket.to(roomId).emit("draw-update", line);
       }
+      
+      // Broadcast to others in the room
+      socket.to(roomId).emit("draw-update", line);
     });
 
     socket.on("undo", (data: { roomId: string; lineId: string }) => {
       const { roomId, lineId } = data;
-      if (rooms[roomId]) {
+      if (roomId && rooms[roomId]) {
         rooms[roomId] = rooms[roomId].filter(l => l.id !== lineId);
         io.to(roomId).emit("line-removed", lineId);
       }
+    });
+
+    socket.on("ping-server", () => {
+      socket.emit("pong-client");
     });
 
     socket.on("clear-canvas", (roomId: string) => {

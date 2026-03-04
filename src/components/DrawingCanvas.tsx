@@ -82,10 +82,19 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   useEffect(() => {
     if (!socket) return;
 
-    // Join room and request state
-    socket.emit('join-room', roomId);
+    const handleConnect = () => {
+      console.log('Socket connected, joining room:', roomId);
+      socket.emit('join-room', roomId);
+    };
+
+    if (socket.connected) {
+      handleConnect();
+    }
+
+    socket.on('connect', handleConnect);
 
     socket.on('canvas-state', (initialLines: LineData[]) => {
+      console.log('Received canvas state:', initialLines.length, 'lines');
       setLines(initialLines);
     });
 
@@ -110,12 +119,13 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('canvas-state');
       socket.off('draw-update');
       socket.off('line-removed');
       socket.off('canvas-cleared');
     };
-  }, [socket]);
+  }, [socket, roomId]);
 
   // Handle Undo/Redo triggers from parent
   useEffect(() => {
@@ -201,10 +211,18 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       shadowColor: activeTool === 'neon' ? brushColor : undefined,
     };
     
-    saveToHistory(lines);
-    setLines([...lines, newLine]);
+    setLines(prev => {
+      saveToHistory(prev);
+      return [...prev, newLine];
+    });
+    
     setRedoStack([]);
     onRedoAvailable(false);
+
+    // Emit initial point
+    if (socket && roomId) {
+      socket.emit('draw', { roomId, line: newLine });
+    }
   };
 
   const handleMouseMove = (e: any) => {
@@ -218,23 +236,29 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     if (!isDrawing.current) return;
 
-    let lastLine = { ...lines[lines.length - 1] };
-    lastLine.points = lastLine.points.concat([pos.x, pos.y]);
+    setLines(prev => {
+      const lastLine = { ...prev[prev.length - 1] };
+      lastLine.points = lastLine.points.concat([pos.x, pos.y]);
+      
+      const newLines = [...prev];
+      newLines[newLines.length - 1] = lastLine;
 
-    const newLines = [...lines];
-    newLines[newLines.length - 1] = lastLine;
-    setLines(newLines);
+      // Emit update in real-time (throttled by browser render)
+      if (socket && roomId) {
+        socket.emit('draw', { roomId, line: lastLine });
+      }
+
+      return newLines;
+    });
   };
 
   const handleMouseUp = () => {
     if (isLassoing.current) {
       isLassoing.current = false;
       // Simple lasso logic: select lines whose first point is inside the lasso polygon
-      // In a real app, we'd use a proper polygon intersection algorithm
       const selected = lines.filter(line => {
         const x = line.points[0];
         const y = line.points[1];
-        // Very basic check: is it within the bounding box of the lasso?
         const minX = Math.min(...lassoPoints.filter((_, i) => i % 2 === 0));
         const maxX = Math.max(...lassoPoints.filter((_, i) => i % 2 === 0));
         const minY = Math.min(...lassoPoints.filter((_, i) => i % 2 === 1));
@@ -250,10 +274,14 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (!isDrawing.current) return;
     isDrawing.current = false;
     
-    const lastLine = lines[lines.length - 1];
-    if (socket && roomId) {
-      socket.emit('draw', { roomId, line: lastLine });
-    }
+    // Final emit to ensure state is synced
+    setLines(prev => {
+      const lastLine = prev[prev.length - 1];
+      if (socket && roomId && lastLine) {
+        socket.emit('draw', { roomId, line: lastLine });
+      }
+      return prev;
+    });
   };
 
   const handleWheel = (e: any) => {
