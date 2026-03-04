@@ -23,11 +23,16 @@ export default function App() {
     setPingStatus('Testing...');
     try {
       const res = await fetch('/api/status');
-      const data = await res.json();
-      if (data.status === 'online') {
-        setPingStatus('Success: Server is Alive');
-      } else {
-        setPingStatus(`Error: ${JSON.stringify(data)}`);
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        if (data.status === 'online') {
+          setPingStatus(`Success: Server Online (${data.serverTime.split('T')[1].split('.')[0]})`);
+        } else {
+          setPingStatus(`Error: Unexpected response format`);
+        }
+      } catch (e) {
+        setPingStatus(`Error: Not JSON. Body: ${text.substring(0, 30)}...`);
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);

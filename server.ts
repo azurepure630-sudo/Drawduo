@@ -9,27 +9,33 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
+  console.log("[System] Starting Drawing Server...");
+  
   const app = express();
   const httpServer = createServer(app);
   
-  // 1. Initialize Socket.io with the most compatible settings
+  // 1. Socket.io Setup (Ultra-Compatible)
   const io = new Server(httpServer, {
     path: "/socket.io/",
     cors: { origin: "*" },
     transports: ["polling", "websocket"]
   });
 
-  const PORT = 3000;
   const rooms: Record<string, any[]> = {};
 
-  // 2. API Routes - MUST come before Vite middleware
+  // 2. Master Status Route (Guaranteed Response)
   app.get("/api/status", (req, res) => {
-    res.json({ status: "online", rooms: Object.keys(rooms).length });
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).send(JSON.stringify({ 
+      status: "online", 
+      serverTime: new Date().toISOString(),
+      activeRooms: Object.keys(rooms).length
+    }));
   });
 
   // 3. Socket Logic
   io.on("connection", (socket) => {
-    console.log(`[Server] Connected: ${socket.id}`);
+    console.log(`[Socket] Connected: ${socket.id}`);
     
     socket.on("join-room", (roomId) => {
       socket.join(roomId);
@@ -49,25 +55,27 @@ async function startServer() {
     });
   });
 
-  // 4. Vite Integration
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
-  }
+  // 4. Vite Integration (Development Mode)
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
 
-  // 5. Start Listening
+  // 5. Port Binding (The Critical Part)
+  const PORT = 3000;
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`>>> SERVER LIVE ON PORT ${PORT} <<<`);
+    console.log(`\n\n*****************************************`);
+    console.log(`* SERVER IS LIVE AT http://0.0.0.0:${PORT} *`);
+    console.log(`*****************************************\n\n`);
   });
 
-  // Error handling to prevent silent crashes
-  process.on("uncaughtException", (err) => console.error("CRITICAL ERROR:", err));
+  // Prevent crashes from taking down the whole app
+  process.on("uncaughtException", (err) => {
+    console.error("[Critical Error]", err);
+  });
 }
 
-startServer().catch(err => console.error("SERVER STARTUP FAILED:", err));
+startServer().catch((err) => {
+  console.error("[Fatal Error] Server failed to start:", err);
+});
