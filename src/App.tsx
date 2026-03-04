@@ -22,9 +22,9 @@ export default function App() {
   const testPing = async () => {
     setPingStatus('Testing...');
     try {
-      const res = await fetch('/api/health');
+      const res = await fetch('/api/status');
       const data = await res.json();
-      if (data.status === 'ok') {
+      if (data.status === 'online') {
         setPingStatus('Success: Server is Alive');
       } else {
         setPingStatus(`Error: ${JSON.stringify(data)}`);

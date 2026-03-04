@@ -11,103 +11,45 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
+  
+  // 1. Initialize Socket.io with the most compatible settings
   const io = new Server(httpServer, {
     path: "/socket.io/",
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-      credentials: true
-    },
-    allowEIO3: true,
-    transports: ['polling', 'websocket']
+    cors: { origin: "*" },
+    transports: ["polling", "websocket"]
   });
 
   const PORT = 3000;
-
-  // Global Middleware for Debugging
-  app.use((req, res, next) => {
-    if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) {
-      console.log(`[Server] Incoming Request: ${req.method} ${req.url}`);
-    }
-    next();
-  });
-
-  // API routes go here
-  app.get("/api/health", (req, res) => {
-    console.log(`[Server] Health check SUCCESS`);
-    res.status(200).json({ 
-      status: "ok", 
-      msg: "Drawing Server is Online",
-      time: new Date().toISOString() 
-    });
-  });
-
-  app.get("/api/ping", (req, res) => {
-    res.send("pong");
-  });
-
-  // Store canvas state per room
-  // In a real app, this would be in a database
   const rooms: Record<string, any[]> = {};
 
-  io.on("connection", (socket) => {
-    console.log(`[Socket] User connected: ${socket.id}`);
+  // 2. API Routes - MUST come before Vite middleware
+  app.get("/api/status", (req, res) => {
+    res.json({ status: "online", rooms: Object.keys(rooms).length });
+  });
 
-    socket.on("join-room", (roomId: string) => {
-      if (!roomId) {
-        console.log(`[Socket] User ${socket.id} tried to join with empty roomId`);
-        return;
-      }
+  // 3. Socket Logic
+  io.on("connection", (socket) => {
+    console.log(`[Server] Connected: ${socket.id}`);
+    
+    socket.on("join-room", (roomId) => {
       socket.join(roomId);
-      console.log(`[Socket] User ${socket.id} joined room: ${roomId}`);
-      
-      // Send current room state to the new user
-      const state = rooms[roomId] || [];
-      console.log(`[Socket] Sending state (${state.length} lines) to ${socket.id}`);
-      socket.emit("canvas-state", state);
+      socket.emit("canvas-state", rooms[roomId] || []);
     });
 
-    socket.on("draw", (data: { roomId: string; line: any }) => {
+    socket.on("draw", (data) => {
       const { roomId, line } = data;
-      if (!roomId || !line) return;
-      
       if (!rooms[roomId]) rooms[roomId] = [];
-      
-      // If the line has an ID, check if we're updating an existing one
-      const existingIndex = rooms[roomId].findIndex(l => l.id === line.id);
-      if (existingIndex !== -1) {
-        rooms[roomId][existingIndex] = line;
-      } else {
-        rooms[roomId].push(line);
-      }
-      
-      // Broadcast to others in the room
+      rooms[roomId].push(line);
       socket.to(roomId).emit("draw-update", line);
     });
 
-    socket.on("undo", (data: { roomId: string; lineId: string }) => {
-      const { roomId, lineId } = data;
-      if (roomId && rooms[roomId]) {
-        rooms[roomId] = rooms[roomId].filter(l => l.id !== lineId);
-        io.to(roomId).emit("line-removed", lineId);
-      }
-    });
-
-    socket.on("ping-server", () => {
-      socket.emit("pong-client");
-    });
-
-    socket.on("clear-canvas", (roomId: string) => {
+    socket.on("clear-canvas", (roomId) => {
       rooms[roomId] = [];
       io.to(roomId).emit("canvas-cleared");
     });
-
-    socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
-    });
   });
 
-  // Vite middleware for development
+  // 4. Vite Integration
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -115,19 +57,17 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Serve static files in production
     app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+    app.get("*", (req, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
   }
 
+  // 5. Start Listening
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`=========================================`);
-    console.log(`SERVER STARTING ON PORT ${PORT}`);
-    console.log(`TIME: ${new Date().toISOString()}`);
-    console.log(`=========================================`);
+    console.log(`>>> SERVER LIVE ON PORT ${PORT} <<<`);
   });
+
+  // Error handling to prevent silent crashes
+  process.on("uncaughtException", (err) => console.error("CRITICAL ERROR:", err));
 }
 
-startServer();
+startServer().catch(err => console.error("SERVER STARTUP FAILED:", err));
