@@ -22,7 +22,6 @@ export default function App() {
   const testPing = async () => {
     setPingStatus('Testing...');
     try {
-      // Use absolute URL to bypass any relative path issues
       const url = `${window.location.origin}/api/health?t=${Date.now()}`;
       const res = await fetch(url, { 
         method: 'GET',
@@ -31,11 +30,16 @@ export default function App() {
       });
       
       const text = await res.text();
+      // Show the first 100 characters of the response to see what's actually there
+      setPingStatus(`Raw: ${text.substring(0, 100)}`);
+      
       try {
         const data = JSON.parse(text);
-        setPingStatus(`Success: ${data.status}`);
+        if (data.status === 'ok') {
+          setPingStatus('Success: Server is Alive');
+        }
       } catch (e) {
-        setPingStatus(`Error: Not JSON. Status: ${res.status}. Body: ${text.substring(0, 30)}...`);
+        // Not JSON, handled by the "Raw" display above
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);
@@ -61,12 +65,11 @@ export default function App() {
 
     const newSocket = io(window.location.origin, {
       path: '/socket.io/',
-      transports: ['polling', 'websocket'],
+      transports: ['polling'], // Force polling only for now to stabilize
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       timeout: 20000,
-      forceNew: true
     });
 
     newSocket.on('connect', () => {

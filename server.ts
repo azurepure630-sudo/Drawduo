@@ -26,8 +26,12 @@ async function startServer() {
 
   // API routes go here
   app.get("/api/health", (req, res) => {
-    console.log(`[Server] Health check received`);
-    res.json({ status: "ok", time: new Date().toISOString() });
+    console.log(`[Server] Health check received from ${req.ip}`);
+    res.status(200).json({ 
+      status: "ok", 
+      msg: "Drawing Server is Online",
+      time: new Date().toISOString() 
+    });
   });
 
   app.get("/api/ping", (req, res) => {
