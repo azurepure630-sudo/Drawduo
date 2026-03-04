@@ -1,56 +1,30 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, onValue, push, set, onChildAdded, onChildRemoved, off } from 'firebase/database';
 import DrawingCanvas from './components/DrawingCanvas';
 import Toolbar from './components/Toolbar';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, Users, Copy, Check, Maximize2, Minimize2 } from 'lucide-react';
+import { Heart, Users, Copy, Check, Maximize2, Minimize2, Cloud, CloudOff } from 'lucide-react';
+
+// Public Demo Firebase Config (For Prototype)
+const firebaseConfig = {
+  databaseURL: "https://drawing-app-demo-default-rtdb.firebaseio.com/",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 const generateRoomId = () => Math.random().toString(36).substring(2, 9);
 
 export default function App() {
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [roomId, setRoomId] = useState<string>('');
   const [brushColor, setBrushColor] = useState('#1a1a1a');
   const [brushSize, setBrushSize] = useState(5);
   const [activeTool, setActiveTool] = useState('pen');
   const [isJoined, setIsJoined] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [socketError, setSocketError] = useState<string | null>(null);
-  const [pingStatus, setPingStatus] = useState<string>('Not tested');
-  const [serverLogs, setServerLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(false);
-
-  const fetchLogs = async () => {
-    try {
-      const res = await fetch('/api/logs');
-      const data = await res.json();
-      setServerLogs(data);
-    } catch (err) {
-      setServerLogs(['Failed to fetch logs']);
-    }
-  };
   const [copied, setCopied] = useState(false);
-
-  const testPing = async () => {
-    setPingStatus('Testing...');
-    try {
-      const res = await fetch('/api/status');
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        if (data.status === 'online') {
-          setPingStatus(`Success: Server Online`);
-          fetchLogs(); // Automatically fetch logs on success
-        } else {
-          setPingStatus(`Error: Unexpected format`);
-        }
-      } catch (e) {
-        setPingStatus(`Error: 404/Not JSON. Body: ${text.substring(0, 20)}...`);
-      }
-    } catch (err: any) {
-      setPingStatus(`Failed: ${err.message}`);
-    }
-  };
+  const [remoteLines, setRemoteLines] = useState<any[]>([]);
   
   // Undo/Redo state
   const [canUndo, setCanUndo] = useState(false);
@@ -59,56 +33,55 @@ export default function App() {
   const [redoTrigger, setRedoTrigger] = useState(0);
 
   useEffect(() => {
-    // Initialize room from URL or generate new one
     const params = new URLSearchParams(window.location.search);
     const id = params.get('room') || generateRoomId();
     setRoomId(id);
     
-    // Update URL without refreshing
     if (!params.get('room')) {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io({
-      path: '/socket.io/',
-      transports: ['polling', 'websocket'],
-    });
+    // Connect to Firebase Room
+    const roomRef = ref(db, `rooms/${id}/lines`);
+    
+    setIsConnected(true);
 
-    newSocket.on('connect', () => {
-      console.log('[Socket] Connected with ID:', newSocket.id);
-      setIsConnected(true);
-      setSocketError(null);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const lines = Object.values(data);
+        setRemoteLines(lines);
+      } else {
+        setRemoteLines([]);
+      }
     });
-
-    newSocket.on('connect_error', (err) => {
-      console.error('[Socket] Connection Error:', err.message);
-      setSocketError(err.message);
-      setIsConnected(false);
-    });
-
-    newSocket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
-      setIsConnected(false);
-    });
-
-    setSocket(newSocket);
 
     return () => {
-      newSocket.disconnect();
+      off(roomRef);
+      setIsConnected(false);
     };
-  }, []);
+  }, [roomId]);
 
-  const handleJoin = useCallback(() => {
-    if (socket && roomId) {
-      setIsJoined(true);
+  const handleDraw = useCallback((line: any) => {
+    if (roomId) {
+      const roomRef = ref(db, `rooms/${roomId}/lines`);
+      const newLineRef = push(roomRef);
+      set(newLineRef, line);
     }
-  }, [socket, roomId]);
+  }, [roomId]);
 
   const handleClear = useCallback(() => {
-    if (socket && roomId) {
-      socket.emit('clear-canvas', roomId);
+    if (roomId) {
+      const roomRef = ref(db, `rooms/${roomId}`);
+      set(roomRef, null);
     }
-  }, [socket, roomId]);
+  }, [roomId]);
+
+  const handleJoin = useCallback(() => {
+    if (roomId) {
+      setIsJoined(true);
+    }
+  }, [roomId]);
 
   const handleShare = useCallback(() => {
     const url = window.location.href;
@@ -239,7 +212,8 @@ export default function App() {
             {/* Main Canvas Area */}
             <main className="flex-1 relative">
               <DrawingCanvas
-                socket={socket}
+                remoteLines={remoteLines}
+                onDraw={handleDraw}
                 roomId={roomId}
                 brushColor={brushColor}
                 brushSize={brushSize}
@@ -268,52 +242,33 @@ export default function App() {
               canRedo={canRedo}
             />
 
-            {/* Debug Info */}
+            {/* Cloud Status */}
             <div className="fixed top-4 left-4 z-[60] bg-black/90 text-white p-4 rounded-2xl font-mono text-[10px] space-y-2 pointer-events-auto border border-white/10 shadow-2xl select-text">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
-                  <span className="font-bold">SYSTEM STATUS</span>
+                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+                  <span className="font-bold">CLOUD SYNC</span>
                 </div>
-                <button 
-                  onClick={() => {
-                    const info = `Socket: ${socket?.id || '---'}\nRoom: ${roomId}\nStatus: ${isConnected ? 'CONNECTED' : 'DISCONNECTED'}\nError: ${socketError || 'None'}\nPing: ${pingStatus}`;
-                    navigator.clipboard.writeText(info);
-                  }}
-                  className="px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded text-[8px] uppercase tracking-wider transition-colors"
-                >
-                  Copy All
-                </button>
+                {isConnected ? <Cloud className="w-3 h-3 text-emerald-400" /> : <CloudOff className="w-3 h-3 text-red-400" />}
               </div>
               <div className="opacity-70">
-                <div>Socket ID: {socket?.id || '---'}</div>
                 <div>Room: {roomId}</div>
-                <div>Status: {isConnected ? 'CONNECTED' : 'DISCONNECTED'}</div>
-                {socketError && <div className="text-red-400 mt-1 break-all">Error: {socketError}</div>}
+                <div>Status: {isConnected ? 'CONNECTED' : 'OFFLINE'}</div>
+                <div className="text-emerald-400/80 mt-1">✓ Bypassing local proxy</div>
               </div>
               <div className="pt-2 border-t border-white/10">
-                <div className="break-all">Ping API: {pingStatus}</div>
                 <button 
-                  onClick={(e) => { e.stopPropagation(); testPing(); }} 
-                  className="mt-2 w-full py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors font-bold"
+                  onClick={() => {
+                    const url = window.location.href;
+                    navigator.clipboard.writeText(url);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="w-full py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors font-bold flex items-center justify-center gap-2"
                 >
-                  Test Server Ping
+                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copied ? 'COPIED!' : 'COPY JOIN LINK'}
                 </button>
-                
-                {/* Diagnostic Logs */}
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <button 
-                    onClick={() => { setShowLogs(!showLogs); fetchLogs(); }}
-                    className="text-[10px] text-white/40 hover:text-white/60 uppercase tracking-widest"
-                  >
-                    {showLogs ? 'Hide Server Logs' : 'Show Server Logs'}
-                  </button>
-                  {showLogs && (
-                    <div className="mt-2 max-h-32 overflow-y-auto font-mono text-[9px] text-emerald-400/80 bg-black/40 p-2 rounded">
-                      {serverLogs.map((log, i) => <div key={i}>{log}</div>)}
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </motion.div>

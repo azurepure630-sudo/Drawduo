@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Line } from 'react-konva';
-import { io, Socket } from 'socket.io-client';
 import { motion } from 'motion/react';
-
-interface DrawingCanvasProps {
-  socket: Socket | null;
-  roomId: string;
-  brushColor: string;
-  brushSize: number;
-}
 
 interface LineData {
   id: string;
@@ -23,7 +15,8 @@ interface LineData {
 }
 
 interface DrawingCanvasProps {
-  socket: Socket | null;
+  remoteLines: LineData[];
+  onDraw: (line: LineData) => void;
   roomId: string;
   brushColor: string;
   brushSize: number;
@@ -36,7 +29,8 @@ interface DrawingCanvasProps {
 }
 
 const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ 
-  socket, 
+  remoteLines,
+  onDraw,
   roomId, 
   brushColor, 
   brushSize,
@@ -47,9 +41,12 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   undoTrigger,
   redoTrigger
 }) => {
-  const [lines, setLines] = useState<LineData[]>([]);
+  const [localLines, setLocalLines] = useState<LineData[]>([]);
   const [history, setHistory] = useState<LineData[][]>([]);
   const [redoStack, setRedoStack] = useState<LineData[][]>([]);
+  
+  // Merge local and remote lines
+  const lines = [...remoteLines, ...localLines];
   
   const isDrawing = useRef(false);
   const stageRef = useRef<any>(null);
@@ -80,52 +77,8 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!socket) return;
-
-    const handleConnect = () => {
-      console.log('Socket connected, joining room:', roomId);
-      socket.emit('join-room', roomId);
-    };
-
-    if (socket.connected) {
-      handleConnect();
-    }
-
-    socket.on('connect', handleConnect);
-
-    socket.on('canvas-state', (initialLines: LineData[]) => {
-      console.log('Received canvas state:', initialLines.length, 'lines');
-      setLines(initialLines);
-    });
-
-    socket.on('draw-update', (newLine: LineData) => {
-      setLines((prevLines) => {
-        const index = prevLines.findIndex(l => l.id === newLine.id);
-        if (index !== -1) {
-          const updated = [...prevLines];
-          updated[index] = newLine;
-          return updated;
-        }
-        return [...prevLines, newLine];
-      });
-    });
-
-    socket.on('line-removed', (lineId: string) => {
-      setLines((prevLines) => prevLines.filter(l => l.id !== lineId));
-    });
-
-    socket.on('canvas-cleared', () => {
-      setLines([]);
-    });
-
-    return () => {
-      socket.off('connect', handleConnect);
-      socket.off('canvas-state');
-      socket.off('draw-update');
-      socket.off('line-removed');
-      socket.off('canvas-cleared');
-    };
-  }, [socket, roomId]);
+    // Firebase handles the state sync now via remoteLines prop
+  }, [remoteLines]);
 
   // Handle Undo/Redo triggers from parent
   useEffect(() => {
@@ -145,15 +98,10 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (history.length === 0) return;
     
     const lastState = history[history.length - 1];
-    const currentLastLine = lines[lines.length - 1];
     
-    if (currentLastLine && socket && roomId) {
-      socket.emit('undo', { roomId, lineId: currentLastLine.id });
-    }
-
     setRedoStack(prev => [...prev, [...lines]]);
     setHistory(prev => prev.slice(0, -1));
-    setLines(lastState || []);
+    setLocalLines(lastState || []);
     
     onUndoAvailable(history.length > 1);
     onRedoAvailable(true);
@@ -165,13 +113,13 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const nextState = redoStack[redoStack.length - 1];
     const lineToReAdd = nextState[nextState.length - 1];
     
-    if (lineToReAdd && socket && roomId) {
-      socket.emit('draw', { roomId, line: lineToReAdd });
+    if (lineToReAdd && roomId) {
+      onDraw(lineToReAdd);
     }
 
     setHistory(prev => [...prev, [...lines]]);
     setRedoStack(prev => prev.slice(0, -1));
-    setLines(nextState);
+    setLocalLines(nextState);
     
     onUndoAvailable(true);
     onRedoAvailable(redoStack.length > 1);
@@ -211,7 +159,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       shadowColor: activeTool === 'neon' ? brushColor : undefined,
     };
     
-    setLines(prev => {
+    setLocalLines(prev => {
       saveToHistory(prev);
       return [...prev, newLine];
     });
@@ -219,10 +167,8 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     setRedoStack([]);
     onRedoAvailable(false);
 
-    // Emit initial point
-    if (socket && roomId) {
-      socket.emit('draw', { roomId, line: newLine });
-    }
+    // Sync to Firebase
+    onDraw(newLine);
   };
 
   const handleMouseMove = (e: any) => {
@@ -236,17 +182,15 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     if (!isDrawing.current) return;
 
-    setLines(prev => {
+    setLocalLines(prev => {
       const lastLine = { ...prev[prev.length - 1] };
       lastLine.points = lastLine.points.concat([pos.x, pos.y]);
       
       const newLines = [...prev];
       newLines[newLines.length - 1] = lastLine;
 
-      // Emit update in real-time (throttled by browser render)
-      if (socket && roomId) {
-        socket.emit('draw', { roomId, line: lastLine });
-      }
+      // Sync to Firebase
+      onDraw(lastLine);
 
       return newLines;
     });
@@ -274,11 +218,11 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (!isDrawing.current) return;
     isDrawing.current = false;
     
-    // Final emit to ensure state is synced
-    setLines(prev => {
+    // Final sync
+    setLocalLines(prev => {
       const lastLine = prev[prev.length - 1];
-      if (socket && roomId && lastLine) {
-        socket.emit('draw', { roomId, line: lastLine });
+      if (lastLine) {
+        onDraw(lastLine);
       }
       return prev;
     });
@@ -397,8 +341,8 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                 e.target.x(0);
                 e.target.y(0);
                 
-                if (socket && roomId) {
-                  socket.emit('draw', { roomId, line: updatedLine });
+                if (roomId) {
+                  onDraw(updatedLine);
                 }
               }}
               globalCompositeOperation={

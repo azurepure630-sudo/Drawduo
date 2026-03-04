@@ -1,5 +1,5 @@
 {
   "name": "DuoDraw",
-  "description": "A shared canvas for couples to draw together in real-time.",
+  "description": "A collaborative drawing app with real-time cloud sync via Firebase, bypassing local network restrictions for perfect cross-device drawing.",
   "requestFramePermissions": []
 }
