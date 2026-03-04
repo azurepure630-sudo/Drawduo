@@ -1,0 +1,95 @@
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function startServer() {
+  const app = express();
+  const httpServer = createServer(app);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+  });
+
+  const PORT = 3000;
+
+  // Store canvas state per room
+  // In a real app, this would be in a database
+  const rooms: Record<string, any[]> = {};
+
+  io.on("connection", (socket) => {
+    console.log("User connected:", socket.id);
+
+    socket.on("join-room", (roomId: string) => {
+      socket.join(roomId);
+      console.log(`User ${socket.id} joined room ${roomId}`);
+      
+      // Send current room state to the new user
+      if (rooms[roomId]) {
+        socket.emit("canvas-state", rooms[roomId]);
+      } else {
+        rooms[roomId] = [];
+      }
+    });
+
+    socket.on("draw", (data: { roomId: string; line: any }) => {
+      const { roomId, line } = data;
+      if (!rooms[roomId]) rooms[roomId] = [];
+      
+      // If the line has an ID, check if we're updating an existing one
+      const existingIndex = rooms[roomId].findIndex(l => l.id === line.id);
+      if (existingIndex !== -1) {
+        rooms[roomId][existingIndex] = line;
+        socket.to(roomId).emit("draw-update", line);
+      } else {
+        rooms[roomId].push(line);
+        socket.to(roomId).emit("draw-update", line);
+      }
+    });
+
+    socket.on("undo", (data: { roomId: string; lineId: string }) => {
+      const { roomId, lineId } = data;
+      if (rooms[roomId]) {
+        rooms[roomId] = rooms[roomId].filter(l => l.id !== lineId);
+        io.to(roomId).emit("line-removed", lineId);
+      }
+    });
+
+    socket.on("clear-canvas", (roomId: string) => {
+      rooms[roomId] = [];
+      io.to(roomId).emit("canvas-cleared");
+    });
+
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", socket.id);
+    });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Serve static files in production
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  }
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

@@ -1,0 +1,5 @@
+{
+  "name": "DuoDraw",
+  "description": "A shared canvas for couples to draw together in real-time.",
+  "requestFramePermissions": []
+}
