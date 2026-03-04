@@ -15,7 +15,20 @@ export default function App() {
   const [activeTool, setActiveTool] = useState('pen');
   const [isJoined, setIsJoined] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [socketError, setSocketError] = useState<string | null>(null);
+  const [pingStatus, setPingStatus] = useState<string>('Not tested');
   const [copied, setCopied] = useState(false);
+
+  const testPing = async () => {
+    setPingStatus('Testing...');
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setPingStatus(`Success: ${data.status}`);
+    } catch (err: any) {
+      setPingStatus(`Failed: ${err.message}`);
+    }
+  };
   
   // Undo/Redo state
   const [canUndo, setCanUndo] = useState(false);
@@ -34,17 +47,29 @@ export default function App() {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io(window.location.origin, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
+    const newSocket = io({
+      reconnection: true,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      timeout: 20000,
     });
 
     newSocket.on('connect', () => {
-      console.log('Connected with ID:', newSocket.id);
+      console.log('[Socket] Connected with ID:', newSocket.id);
       setIsConnected(true);
+      setSocketError(null);
     });
-    newSocket.on('disconnect', () => setIsConnected(false));
+
+    newSocket.on('connect_error', (err) => {
+      console.error('[Socket] Connection Error:', err.message);
+      setSocketError(err.message);
+      setIsConnected(false);
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('[Socket] Disconnected:', reason);
+      setIsConnected(false);
+    });
 
     setSocket(newSocket);
 
@@ -224,10 +249,26 @@ export default function App() {
             />
 
             {/* Debug Info */}
-            <div className="fixed top-4 left-4 z-[60] bg-black/80 text-white p-3 rounded-xl font-mono text-[10px] space-y-1 pointer-events-none opacity-50">
-              <div>Socket: {socket?.id || 'Connecting...'}</div>
-              <div>Room: {roomId}</div>
-              <div>Status: {isConnected ? 'CONNECTED' : 'DISCONNECTED'}</div>
+            <div className="fixed top-4 left-4 z-[60] bg-black/90 text-white p-4 rounded-2xl font-mono text-[10px] space-y-2 pointer-events-none border border-white/10 shadow-2xl">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
+                <span className="font-bold">SYSTEM STATUS</span>
+              </div>
+              <div className="opacity-70">
+                <div>Socket ID: {socket?.id || '---'}</div>
+                <div>Room: {roomId}</div>
+                <div>Status: {isConnected ? 'CONNECTED' : 'DISCONNECTED'}</div>
+                {socketError && <div className="text-red-400 mt-1">Error: {socketError}</div>}
+              </div>
+              <div className="pt-2 border-t border-white/10">
+                <div>Ping API: {pingStatus}</div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); testPing(); }} 
+                  className="mt-2 px-2 py-1 bg-white/10 hover:bg-white/20 rounded pointer-events-auto transition-colors"
+                >
+                  Test Server Ping
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

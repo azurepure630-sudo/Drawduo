@@ -20,6 +20,12 @@ async function startServer() {
 
   const PORT = 3000;
 
+  // API routes go here
+  app.get("/api/health", (req, res) => {
+    console.log(`[Server] Health check from ${req.ip}`);
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
   // Store canvas state per room
   // In a real app, this would be in a database
   const rooms: Record<string, any[]> = {};
