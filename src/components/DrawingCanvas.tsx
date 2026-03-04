@@ -275,6 +275,57 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
   };
 
+  const lastDist = useRef(0);
+  const lastCenter = useRef<any>(null);
+
+  const handleTouchMove = (e: any) => {
+    const touch1 = e.evt.touches[0];
+    const touch2 = e.evt.touches[1];
+
+    if (touch1 && touch2) {
+      // Pinch to zoom logic
+      if (isDrawing.current) isDrawing.current = false;
+      
+      const dist = Math.sqrt(
+        Math.pow(touch1.clientX - touch2.clientX, 2) +
+        Math.pow(touch1.clientY - touch2.clientY, 2)
+      );
+
+      const center = {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2,
+      };
+
+      if (lastDist.current > 0) {
+        const stage = stageRef.current;
+        const oldScale = stage.scaleX();
+        const pointTo = {
+          x: (center.x - stage.x()) / oldScale,
+          y: (center.y - stage.y()) / oldScale,
+        };
+
+        const newScale = oldScale * (dist / lastDist.current);
+        
+        setStageScale(newScale);
+        setStagePos({
+          x: center.x - pointTo.x * newScale,
+          y: center.y - pointTo.y * newScale,
+        });
+      }
+
+      lastDist.current = dist;
+      lastCenter.current = center;
+    } else {
+      handleMouseMove(e);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastDist.current = 0;
+    lastCenter.current = null;
+    handleMouseUp();
+  };
+
   return (
     <div ref={containerRef} className="w-full h-full bg-[#fdfaf6] cursor-crosshair overflow-hidden rounded-2xl shadow-inner border border-[#e5e0d8]">
       <Stage
@@ -288,8 +339,8 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onTouchStart={handleMouseDown}
-        onTouchMove={handleMouseMove}
-        onTouchEnd={handleMouseUp}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
         draggable={activeTool === 'pan'}
         ref={stageRef}
