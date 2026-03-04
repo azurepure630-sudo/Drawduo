@@ -28,12 +28,16 @@ async function startServer() {
     console.log(`[Socket] User connected: ${socket.id}`);
 
     socket.on("join-room", (roomId: string) => {
-      if (!roomId) return;
+      if (!roomId) {
+        console.log(`[Socket] User ${socket.id} tried to join with empty roomId`);
+        return;
+      }
       socket.join(roomId);
       console.log(`[Socket] User ${socket.id} joined room: ${roomId}`);
       
       // Send current room state to the new user
       const state = rooms[roomId] || [];
+      console.log(`[Socket] Sending state (${state.length} lines) to ${socket.id}`);
       socket.emit("canvas-state", state);
     });
 

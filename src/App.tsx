@@ -34,12 +34,16 @@ export default function App() {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io({
+    const newSocket = io(window.location.origin, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
 
-    newSocket.on('connect', () => setIsConnected(true));
+    newSocket.on('connect', () => {
+      console.log('Connected with ID:', newSocket.id);
+      setIsConnected(true);
+    });
     newSocket.on('disconnect', () => setIsConnected(false));
 
     setSocket(newSocket);
@@ -119,10 +123,16 @@ export default function App() {
 
               <div className="space-y-4">
                 <div className="p-6 bg-white rounded-3xl shadow-xl shadow-rose-900/5 border border-rose-100 space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-mono uppercase tracking-widest text-gray-400">Room ID</label>
-                    <div className="text-2xl font-mono tracking-wider text-rose-600 bg-rose-50/50 py-3 rounded-xl border border-rose-100">
-                      {roomId}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-mono uppercase tracking-widest text-gray-400">Room ID</label>
+                      <input
+                        type="text"
+                        value={roomId}
+                        onChange={(e) => setRoomId(e.target.value)}
+                        className="w-full text-2xl font-mono tracking-wider text-center text-rose-600 bg-rose-50/50 py-3 rounded-xl border border-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200 transition-all"
+                        placeholder="Enter Room ID"
+                      />
                     </div>
                   </div>
                   
@@ -212,6 +222,13 @@ export default function App() {
               canUndo={canUndo}
               canRedo={canRedo}
             />
+
+            {/* Debug Info */}
+            <div className="fixed top-4 left-4 z-[60] bg-black/80 text-white p-3 rounded-xl font-mono text-[10px] space-y-1 pointer-events-none opacity-50">
+              <div>Socket: {socket?.id || 'Connecting...'}</div>
+              <div>Room: {roomId}</div>
+              <div>Status: {isConnected ? 'CONNECTED' : 'DISCONNECTED'}</div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
