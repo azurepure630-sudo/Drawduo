@@ -23,6 +23,8 @@ export default function App() {
     setPingStatus('Testing...');
     try {
       const url = `${window.location.origin}/api/health?t=${Date.now()}`;
+      console.log('[Network] Attempting ping to:', url);
+      
       const res = await fetch(url, { 
         method: 'GET',
         headers: { 'Accept': 'application/json' },
@@ -30,16 +32,21 @@ export default function App() {
       });
       
       const text = await res.text();
-      // Show the first 100 characters of the response to see what's actually there
       setPingStatus(`Raw: ${text.substring(0, 100)}`);
       
-      try {
-        const data = JSON.parse(text);
-        if (data.status === 'ok') {
-          setPingStatus('Success: Server is Alive');
+      if (res.status === 404) {
+        setPingStatus(`Error 404: Server is unreachable via proxy.`);
+      } else if (res.status === 200) {
+        try {
+          const data = JSON.parse(text);
+          if (data.status === 'ok') {
+            setPingStatus('Success: Server is Alive');
+          }
+        } catch (e) {
+          setPingStatus('Error: Response was not JSON');
         }
-      } catch (e) {
-        // Not JSON, handled by the "Raw" display above
+      } else {
+        setPingStatus(`Error ${res.status}: ${text.substring(0, 20)}`);
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);

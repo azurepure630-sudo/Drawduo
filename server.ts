@@ -24,9 +24,17 @@ async function startServer() {
 
   const PORT = 3000;
 
+  // Global Middleware for Debugging
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) {
+      console.log(`[Server] Incoming Request: ${req.method} ${req.url}`);
+    }
+    next();
+  });
+
   // API routes go here
   app.get("/api/health", (req, res) => {
-    console.log(`[Server] Health check received from ${req.ip}`);
+    console.log(`[Server] Health check SUCCESS`);
     res.status(200).json({ 
       status: "ok", 
       msg: "Drawing Server is Online",
@@ -115,7 +123,10 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`=========================================`);
+    console.log(`SERVER STARTING ON PORT ${PORT}`);
+    console.log(`TIME: ${new Date().toISOString()}`);
+    console.log(`=========================================`);
   });
 }
 
