@@ -82,6 +82,9 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   useEffect(() => {
     if (!socket) return;
 
+    // Join room and request state
+    socket.emit('join-room', roomId);
+
     socket.on('canvas-state', (initialLines: LineData[]) => {
       setLines(initialLines);
     });

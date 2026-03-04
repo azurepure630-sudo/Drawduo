@@ -14,6 +14,7 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(5);
   const [activeTool, setActiveTool] = useState('pen');
   const [isJoined, setIsJoined] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [copied, setCopied] = useState(false);
   
   // Undo/Redo state
@@ -33,7 +34,14 @@ export default function App() {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io();
+    const newSocket = io({
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5
+    });
+
+    newSocket.on('connect', () => setIsConnected(true));
+    newSocket.on('disconnect', () => setIsConnected(false));
+
     setSocket(newSocket);
 
     return () => {
@@ -43,7 +51,6 @@ export default function App() {
 
   const handleJoin = useCallback(() => {
     if (socket && roomId) {
-      socket.emit('join-room', roomId);
       setIsJoined(true);
     }
   }, [socket, roomId]);
@@ -149,7 +156,10 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="font-serif italic text-xl">DuoDraw</h2>
-                  <p className="text-[10px] font-mono uppercase tracking-widest text-gray-400">Room: {roomId}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-gray-400">Room: {roomId}</p>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`} />
+                  </div>
                 </div>
               </div>
 
