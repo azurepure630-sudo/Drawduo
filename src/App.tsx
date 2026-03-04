@@ -22,31 +22,12 @@ export default function App() {
   const testPing = async () => {
     setPingStatus('Testing...');
     try {
-      const url = `${window.location.origin}/api/health?t=${Date.now()}`;
-      console.log('[Network] Attempting ping to:', url);
-      
-      const res = await fetch(url, { 
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        cache: 'no-store' 
-      });
-      
-      const text = await res.text();
-      setPingStatus(`Raw: ${text.substring(0, 100)}`);
-      
-      if (res.status === 404) {
-        setPingStatus(`Error 404: Server is unreachable via proxy.`);
-      } else if (res.status === 200) {
-        try {
-          const data = JSON.parse(text);
-          if (data.status === 'ok') {
-            setPingStatus('Success: Server is Alive');
-          }
-        } catch (e) {
-          setPingStatus('Error: Response was not JSON');
-        }
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setPingStatus('Success: Server is Alive');
       } else {
-        setPingStatus(`Error ${res.status}: ${text.substring(0, 20)}`);
+        setPingStatus(`Error: ${JSON.stringify(data)}`);
       }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);
@@ -70,13 +51,9 @@ export default function App() {
       window.history.replaceState({}, '', `?room=${id}`);
     }
 
-    const newSocket = io(window.location.origin, {
+    const newSocket = io({
       path: '/socket.io/',
-      transports: ['polling'], // Force polling only for now to stabilize
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      timeout: 20000,
+      transports: ['polling', 'websocket'],
     });
 
     newSocket.on('connect', () => {
