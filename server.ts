@@ -21,9 +21,14 @@ async function startServer() {
   const PORT = 3000;
 
   // API routes go here
-  app.get("/api/health", (req, res) => {
+  app.get(["/api/health", "/api/health/"], (req, res) => {
     console.log(`[Server] Health check from ${req.ip}`);
-    res.json({ status: "ok", time: new Date().toISOString() });
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).send(JSON.stringify({ 
+      status: "ok", 
+      env: process.env.NODE_ENV || 'development',
+      time: new Date().toISOString() 
+    }));
   });
 
   // Store canvas state per room

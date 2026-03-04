@@ -22,9 +22,14 @@ export default function App() {
   const testPing = async () => {
     setPingStatus('Testing...');
     try {
-      const res = await fetch('/api/health');
-      const data = await res.json();
-      setPingStatus(`Success: ${data.status}`);
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        setPingStatus(`Success: ${data.status}`);
+      } catch (e) {
+        setPingStatus(`Error: Not JSON. Starts with: "${text.substring(0, 20)}..."`);
+      }
     } catch (err: any) {
       setPingStatus(`Failed: ${err.message}`);
     }
@@ -48,6 +53,7 @@ export default function App() {
     }
 
     const newSocket = io({
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -249,22 +255,33 @@ export default function App() {
             />
 
             {/* Debug Info */}
-            <div className="fixed top-4 left-4 z-[60] bg-black/90 text-white p-4 rounded-2xl font-mono text-[10px] space-y-2 pointer-events-none border border-white/10 shadow-2xl">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
-                <span className="font-bold">SYSTEM STATUS</span>
+            <div className="fixed top-4 left-4 z-[60] bg-black/90 text-white p-4 rounded-2xl font-mono text-[10px] space-y-2 pointer-events-auto border border-white/10 shadow-2xl select-text">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
+                  <span className="font-bold">SYSTEM STATUS</span>
+                </div>
+                <button 
+                  onClick={() => {
+                    const info = `Socket: ${socket?.id || '---'}\nRoom: ${roomId}\nStatus: ${isConnected ? 'CONNECTED' : 'DISCONNECTED'}\nError: ${socketError || 'None'}\nPing: ${pingStatus}`;
+                    navigator.clipboard.writeText(info);
+                  }}
+                  className="px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded text-[8px] uppercase tracking-wider transition-colors"
+                >
+                  Copy All
+                </button>
               </div>
               <div className="opacity-70">
                 <div>Socket ID: {socket?.id || '---'}</div>
                 <div>Room: {roomId}</div>
                 <div>Status: {isConnected ? 'CONNECTED' : 'DISCONNECTED'}</div>
-                {socketError && <div className="text-red-400 mt-1">Error: {socketError}</div>}
+                {socketError && <div className="text-red-400 mt-1 break-all">Error: {socketError}</div>}
               </div>
               <div className="pt-2 border-t border-white/10">
-                <div>Ping API: {pingStatus}</div>
+                <div className="break-all">Ping API: {pingStatus}</div>
                 <button 
                   onClick={(e) => { e.stopPropagation(); testPing(); }} 
-                  className="mt-2 px-2 py-1 bg-white/10 hover:bg-white/20 rounded pointer-events-auto transition-colors"
+                  className="mt-2 w-full py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors font-bold"
                 >
                   Test Server Ping
                 </button>
